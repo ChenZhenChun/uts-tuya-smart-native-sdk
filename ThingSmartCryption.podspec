@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'ThingSmartCryption'
-  s.version          = '5.0.2'
+  s.version          = '5.0.3'
   s.summary          = 'Tuya app-specific security SDK.'
   s.description      = 'App-specific Tuya Smart security SDK binary dependency used by uts-tuya-smart-sdk.'
   s.homepage         = 'https://github.com/ChenZhenChun/uts-tuya-smart-native-sdk'
@@ -14,10 +14,7 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '9.0'
   s.watchos.deployment_target = '2.0'
   s.requires_arc     = true
-  s.ios.source_files = [
-    'ios/Frameworks/ThingSmartCryption.xcframework/ios*simulator/ThingSmartCryption.framework/Headers/*',
-    'ios/Sources/LLVMProfileRuntimeShim.c'
-  ]
+  s.ios.source_files = 'ios/Frameworks/ThingSmartCryption.xcframework/ios*simulator/ThingSmartCryption.framework/Headers/*'
   s.watchos.source_files = 'ios/Frameworks/ThingSmartCryption.xcframework/watchos*simulator/ThingSmartCryption.framework/Headers/*'
   s.vendored_frameworks = 'ios/Frameworks/ThingSmartCryption.xcframework'
   s.resources        = [
@@ -26,13 +23,11 @@ Pod::Spec.new do |s|
   ]
 
   s.user_target_xcconfig = {
-    'CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES' => 'YES',
-    'OTHER_LDFLAGS' => '$(inherited) -fprofile-instr-generate'
+    'CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES' => 'YES'
   }
   s.pod_target_xcconfig = {
     'CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES' => 'YES',
     'DEFINES_MODULE' => 'YES',
-    'OTHER_LDFLAGS' => '$(inherited) -fprofile-instr-generate',
     'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'arm64'
   }
 end
