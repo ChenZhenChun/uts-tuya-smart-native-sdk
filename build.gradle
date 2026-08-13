@@ -1,0 +1,23 @@
+plugins {
+    id 'base'
+    id 'maven-publish'
+}
+
+group = 'com.github.ChenZhenChun'
+version = System.getenv('VERSION') ?: '5.0.0'
+
+publishing {
+    publications {
+        securityAlgorithm(MavenPublication) {
+            artifactId = rootProject.name
+            artifact(file('android/security-algorithm-1.0.0-beta.aar')) {
+                extension = 'aar'
+            }
+            pom {
+                name = 'Tuya Smart Native SDK'
+                description = 'Prebuilt Tuya Smart native security SDK dependency.'
+                packaging = 'aar'
+            }
+        }
+    }
+}
