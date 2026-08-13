@@ -4,7 +4,7 @@ plugins {
 }
 
 group = 'com.github.ChenZhenChun'
-version = System.getenv('VERSION') ?: '5.0.0'
+version = System.getenv('VERSION') ?: '5.0.1'
 
 publishing {
     publications {

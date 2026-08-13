@@ -9,7 +9,7 @@ This repository exposes Tuya's app-specific security SDK as a CocoaPods pod name
 ```ruby
 pod 'ThingSmartCryption',
     :git => 'https://github.com/ChenZhenChun/uts-tuya-smart-native-sdk.git',
-    :tag => 'v5.0.0'
+    :tag => 'v5.0.1'
 ```
 
 `ThingSmartHomeKit` is still resolved from Tuya's pod specs:
