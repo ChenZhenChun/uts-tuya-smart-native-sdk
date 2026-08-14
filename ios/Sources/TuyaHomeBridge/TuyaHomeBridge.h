@@ -3,7 +3,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 typedef void (^TuyaHomeBridgeSuccess)(NSDictionary *result);
-typedef void (^TuyaHomeBridgeFailure)(NSInteger code, NSString *message);
+typedef void (^TuyaHomeBridgeFailure)(int code, NSString *message);
 
 @interface TuyaHomeBridge : NSObject
 
