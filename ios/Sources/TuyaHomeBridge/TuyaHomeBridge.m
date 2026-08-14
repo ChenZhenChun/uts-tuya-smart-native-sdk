@@ -29,7 +29,7 @@
     [manager getHomeListWithSuccess:^(NSArray *homes) {
       NSDictionary *result = [self resultWithHomes:homes source:@"query"];
       if (success) {
-        success(result);
+        success([self jsonStringWithObject:result]);
       }
     } failure:^(NSError *error) {
       [self emitFailure:failure fallback:@"Get home list failed" error:error];
@@ -68,7 +68,7 @@
         @"deviceCount": @0
       };
       if (success) {
-        success(@{@"home": home, @"homeId": @(homeId), @"source": @"create"});
+        success([self jsonStringWithObject:@{@"home": home, @"homeId": @(homeId), @"source": @"create"}]);
       }
     } failure:^(NSError *error) {
       [self emitFailure:failure fallback:@"Create home failed" error:error];
@@ -96,7 +96,7 @@
       if (homes.count > 0) {
         NSDictionary *result = [self resultWithHomes:homes source:@"query"];
         if (success) {
-          success(result);
+          success([self jsonStringWithObject:result]);
         }
         return;
       }
@@ -187,6 +187,22 @@
     return [value stringValue];
   }
   return @"";
+}
+
++ (NSString *)jsonStringWithObject:(id)object {
+  if (!object) {
+    return @"{}";
+  }
+  @try {
+    NSData *data = [NSJSONSerialization dataWithJSONObject:object options:0 error:nil];
+    if (!data) {
+      return @"{}";
+    }
+    NSString *json = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    return json.length > 0 ? json : @"{}";
+  } @catch (__unused NSException *exception) {
+    return @"{}";
+  }
 }
 
 + (void)emitFailure:(TuyaHomeBridgeFailure)failure
