@@ -16,61 +16,111 @@
 
 + (void)getHomeListWithSuccess:(TuyaHomeBridgeSuccess)success
                        failure:(TuyaHomeBridgeFailure)failure {
-  ThingSmartHomeManager *manager = [[ThingSmartHomeManager alloc] init];
-  [manager getHomeListWithSuccess:^(NSArray *homes) {
-    NSDictionary *result = [self resultWithHomes:homes source:@"query"];
-    if (success) {
-      success(result);
+  @try {
+    ThingSmartHomeManager *manager = [self homeManagerWithFailure:failure];
+    if (!manager) {
+      return;
     }
-  } failure:^(NSError *error) {
-    [self emitFailure:failure fallback:@"Get home list failed" error:error];
-  }];
+    SEL selector = @selector(getHomeListWithSuccess:failure:);
+    if (![manager respondsToSelector:selector]) {
+      [self emitMessageFailure:failure code:-300002 message:@"ThingSmartHomeManager missing getHomeListWithSuccess:failure:"];
+      return;
+    }
+    [manager getHomeListWithSuccess:^(NSArray *homes) {
+      NSDictionary *result = [self resultWithHomes:homes source:@"query"];
+      if (success) {
+        success(result);
+      }
+    } failure:^(NSError *error) {
+      [self emitFailure:failure fallback:@"Get home list failed" error:error];
+    }];
+  } @catch (NSException *exception) {
+    [self emitException:failure fallback:@"Get home list crashed" exception:exception];
+  }
 }
 
 + (void)createHomeWithName:(NSString *)name
                    success:(TuyaHomeBridgeSuccess)success
                    failure:(TuyaHomeBridgeFailure)failure {
-  NSString *cleanName = name.length > 0 ? name : @"默认家庭";
-  ThingSmartHomeManager *manager = [[ThingSmartHomeManager alloc] init];
-  [manager addHomeWithName:cleanName
-                   geoName:@""
-                     rooms:@[@"默认房间"]
-                  latitude:0
-                 longitude:0
-                   success:^(long long homeId) {
-    NSDictionary *home = @{
-      @"homeId": @(homeId),
-      @"name": cleanName,
-      @"geoName": @"",
-      @"lon": @0,
-      @"lat": @0,
-      @"deviceCount": @0
-    };
-    if (success) {
-      success(@{@"home": home, @"homeId": @(homeId), @"source": @"create"});
+  @try {
+    NSString *cleanName = name.length > 0 ? name : @"默认家庭";
+    ThingSmartHomeManager *manager = [self homeManagerWithFailure:failure];
+    if (!manager) {
+      return;
     }
-  } failure:^(NSError *error) {
-    [self emitFailure:failure fallback:@"Create home failed" error:error];
-  }];
+    SEL selector = @selector(addHomeWithName:geoName:rooms:latitude:longitude:success:failure:);
+    if (![manager respondsToSelector:selector]) {
+      [self emitMessageFailure:failure code:-300003 message:@"ThingSmartHomeManager missing addHomeWithName:geoName:rooms:latitude:longitude:success:failure:"];
+      return;
+    }
+    [manager addHomeWithName:cleanName
+                     geoName:@""
+                       rooms:@[@"默认房间"]
+                    latitude:0
+                   longitude:0
+                     success:^(long long homeId) {
+      NSDictionary *home = @{
+        @"homeId": @(homeId),
+        @"name": cleanName,
+        @"geoName": @"",
+        @"lon": @0,
+        @"lat": @0,
+        @"deviceCount": @0
+      };
+      if (success) {
+        success(@{@"home": home, @"homeId": @(homeId), @"source": @"create"});
+      }
+    } failure:^(NSError *error) {
+      [self emitFailure:failure fallback:@"Create home failed" error:error];
+    }];
+  } @catch (NSException *exception) {
+    [self emitException:failure fallback:@"Create home crashed" exception:exception];
+  }
 }
 
 + (void)getOrCreateDefaultHomeWithName:(NSString *)name
                                success:(TuyaHomeBridgeSuccess)success
                                failure:(TuyaHomeBridgeFailure)failure {
-  NSString *cleanName = name.length > 0 ? name : @"默认家庭";
-  ThingSmartHomeManager *manager = [[ThingSmartHomeManager alloc] init];
-  [manager getHomeListWithSuccess:^(NSArray *homes) {
-    if (homes.count > 0) {
-      NSDictionary *result = [self resultWithHomes:homes source:@"query"];
-      if (success) {
-        success(result);
-      }
+  @try {
+    NSString *cleanName = name.length > 0 ? name : @"默认家庭";
+    ThingSmartHomeManager *manager = [self homeManagerWithFailure:failure];
+    if (!manager) {
       return;
     }
-    [self createHomeWithName:cleanName success:success failure:failure];
-  } failure:^(NSError *error) {
-    [self emitFailure:failure fallback:@"Get default home failed" error:error];
-  }];
+    SEL selector = @selector(getHomeListWithSuccess:failure:);
+    if (![manager respondsToSelector:selector]) {
+      [self emitMessageFailure:failure code:-300002 message:@"ThingSmartHomeManager missing getHomeListWithSuccess:failure:"];
+      return;
+    }
+    [manager getHomeListWithSuccess:^(NSArray *homes) {
+      if (homes.count > 0) {
+        NSDictionary *result = [self resultWithHomes:homes source:@"query"];
+        if (success) {
+          success(result);
+        }
+        return;
+      }
+      [self createHomeWithName:cleanName success:success failure:failure];
+    } failure:^(NSError *error) {
+      [self emitFailure:failure fallback:@"Get default home failed" error:error];
+    }];
+  } @catch (NSException *exception) {
+    [self emitException:failure fallback:@"Get or create home crashed" exception:exception];
+  }
+}
+
++ (ThingSmartHomeManager *)homeManagerWithFailure:(TuyaHomeBridgeFailure)failure {
+  Class managerClass = NSClassFromString(@"ThingSmartHomeManager");
+  if (!managerClass) {
+    [self emitMessageFailure:failure code:-300001 message:@"ThingSmartHomeManager class not found. Check ThingSmartHomeKit integration."];
+    return nil;
+  }
+  id manager = [[managerClass alloc] init];
+  if (![manager isKindOfClass:managerClass]) {
+    [self emitMessageFailure:failure code:-300004 message:@"ThingSmartHomeManager init failed."];
+    return nil;
+  }
+  return manager;
 }
 
 + (NSDictionary *)resultWithHomes:(NSArray *)homes source:(NSString *)source {
@@ -150,6 +200,21 @@
       ? [NSString stringWithFormat:@"%@: %@", fallback, error.localizedDescription]
       : fallback;
   failure(code, message);
+}
+
++ (void)emitException:(TuyaHomeBridgeFailure)failure
+             fallback:(NSString *)fallback
+            exception:(NSException *)exception {
+  NSString *message = [NSString stringWithFormat:@"%@: %@ %@", fallback, exception.name ?: @"NSException", exception.reason ?: @""];
+  [self emitMessageFailure:failure code:-300099 message:message];
+}
+
++ (void)emitMessageFailure:(TuyaHomeBridgeFailure)failure
+                      code:(NSInteger)code
+                   message:(NSString *)message {
+  if (failure) {
+    failure(@(code), message ?: @"TuyaHomeBridge failed");
+  }
 }
 
 @end
