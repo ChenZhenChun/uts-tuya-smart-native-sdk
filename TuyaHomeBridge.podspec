@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'TuyaHomeBridge'
-  s.version          = '5.0.4'
+  s.version          = '5.0.5'
   s.summary          = 'Objective-C bridge for Tuya home APIs used by uts-tuya-smart-sdk.'
   s.description      = 'Wraps ThingSmartHomeKit home APIs behind a simple NSDictionary callback bridge for UTS.'
   s.homepage         = 'https://github.com/ChenZhenChun/uts-tuya-smart-native-sdk'
@@ -10,5 +10,4 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '12.0'
   s.source_files = 'ios/Sources/TuyaHomeBridge/*.{h,m}'
   s.public_header_files = 'ios/Sources/TuyaHomeBridge/*.h'
-  s.dependency 'ThingSmartHomeKit', '~> 7.8.0'
 end

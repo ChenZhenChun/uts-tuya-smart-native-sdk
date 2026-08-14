@@ -1,5 +1,16 @@
 #import "TuyaHomeBridge.h"
-#import <ThingSmartHomeKit/ThingSmartHomeKit.h>
+
+@interface ThingSmartHomeManager : NSObject
+- (void)getHomeListWithSuccess:(void (^)(NSArray *homes))success
+                       failure:(void (^)(NSError *error))failure;
+- (void)addHomeWithName:(NSString *)name
+                geoName:(NSString *)geoName
+                  rooms:(NSArray<NSString *> *)rooms
+               latitude:(double)latitude
+              longitude:(double)longitude
+                success:(void (^)(long long homeId))success
+                failure:(void (^)(NSError *error))failure;
+@end
 
 @implementation TuyaHomeBridge
 
