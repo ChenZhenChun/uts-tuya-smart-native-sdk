@@ -145,7 +145,7 @@
   if (!failure) {
     return;
   }
-  int code = error ? (int)error.code : -1;
+  NSNumber *code = @(error ? error.code : -1);
   NSString *message = error.localizedDescription.length > 0
       ? [NSString stringWithFormat:@"%@: %@", fallback, error.localizedDescription]
       : fallback;
