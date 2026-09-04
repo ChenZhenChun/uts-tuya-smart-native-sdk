@@ -14,7 +14,7 @@
 		</data>
 		<key>Info.plist</key>
 		<data>
-		pYIJHvN8ISEf/z9ziGKMTMa7SjU=
+		mkC2XZg3i6MGYmwIjsSjLyOdGyc=
 		</data>
 		<key>Modules/module.modulemap</key>
 		<data>
@@ -25,10 +25,6 @@
 	<dict>
 		<key>Headers/ThingSmartCryption-iOS-umbrella.h</key>
 		<dict>
-			<key>hash</key>
-			<data>
-			1FBTmChOKGVPSJr32b8OqUiG8jk=
-			</data>
 			<key>hash2</key>
 			<data>
 			d7YUE+Ldj9xgTDL2FuSemATB/gAU3p4NASp0Sy9fB8M=
@@ -36,10 +32,6 @@
 		</dict>
 		<key>Headers/error_code.h</key>
 		<dict>
-			<key>hash</key>
-			<data>
-			e0l9pwTOC0iREgFq6DZdBS+Dxd0=
-			</data>
 			<key>hash2</key>
 			<data>
 			/gIxR1GRHCCn3jptLNHDi5e3mKFT95Ky6MS/S/xNDPc=
@@ -47,10 +39,6 @@
 		</dict>
 		<key>Modules/module.modulemap</key>
 		<dict>
-			<key>hash</key>
-			<data>
-			wWV2/hBCRdg5lSZpvq4gZMz3ioY=
-			</data>
 			<key>hash2</key>
 			<data>
 			eiS5EYf6sCG3XJGkPRqmwNl5537rOCAuMca8ue1Aw5Q=
