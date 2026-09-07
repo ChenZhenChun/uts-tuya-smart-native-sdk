@@ -331,7 +331,8 @@ static TuyaBLESearchProxy *sBLESearchProxy;
     return;
   }
   [self loadHomeId:homeId success:^(ThingSmartHome *home) {
-    NSArray *devices = [home.deviceList isKindOfClass:NSArray.class] ? home.deviceList : @[];
+    id deviceListValue = [self safeValue:home key:@"deviceList"];
+    NSArray *devices = [deviceListValue isKindOfClass:NSArray.class] ? deviceListValue : @[];
     NSMutableArray *items = [NSMutableArray arrayWithCapacity:devices.count];
     for (id device in devices) {
       [items addObject:[self dictionaryFromDevice:device]];
@@ -445,6 +446,7 @@ static TuyaBLESearchProxy *sBLESearchProxy;
     return;
   }
   [self loadHomeId:homeId success:^(__unused ThingSmartHome *home) {
+    [self registerFamilyService];
     completion();
   } failure:failure];
 }
@@ -459,12 +461,17 @@ static TuyaBLESearchProxy *sBLESearchProxy;
   }
   ThingSmartHome *home = [homeClass homeWithHomeId:homeId];
   [home getHomeDataWithSuccess:^(__unused id homeModel) {
-    [self familyProvider].home = home;
-    [self familyProvider].homeId = homeId;
-    [self registerFamilyService];
-    success(home);
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self familyProvider].home = home;
+      [self familyProvider].homeId = homeId;
+      if (success) {
+        success(home);
+      }
+    });
   } failure:^(NSError *error) {
-    [self emitFailure:failure fallback:@"Get home detail failed" error:error];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [self emitFailure:failure fallback:@"Get home detail failed" error:error];
+    });
   }];
 }
 
@@ -485,7 +492,6 @@ static TuyaBLESearchProxy *sBLESearchProxy;
   class_addProtocol(TuyaFamilyProvider.class, familyProtocol);
   ThingSmartBizCore *core = [coreClass sharedInstance];
   [core registerService:familyProtocol withInstance:[self familyProvider]];
-  [core updateConfig];
   id familyService = [core serviceOfProtocol:familyProtocol];
   if ([familyService respondsToSelector:@selector(updateCurrentFamilyId:)]) {
     [familyService updateCurrentFamilyId:sFamilyProvider.homeId];
