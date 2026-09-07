@@ -31,6 +31,16 @@ typedef void (^TuyaHomeBridgeFailure)(NSNumber *code, NSString *message);
                              failure:(TuyaHomeBridgeFailure)failure
     NS_SWIFT_NAME(openDevicePanel(deviceId:success:failure:));
 
++ (void)startSearchToyDevicesWithProductId:(NSString *)productId
+                                    timeout:(NSNumber *)timeout
+                                    success:(TuyaHomeBridgeSuccess)success
+                                    failure:(TuyaHomeBridgeFailure)failure
+    NS_SWIFT_NAME(startSearchToyDevices(productId:timeout:success:failure:));
+
++ (void)stopSearchToyDevicesWithSuccess:(TuyaHomeBridgeSuccess)success
+                                 failure:(TuyaHomeBridgeFailure)failure
+    NS_SWIFT_NAME(stopSearchToyDevices(success:failure:));
+
 @end
 
 NS_ASSUME_NONNULL_END

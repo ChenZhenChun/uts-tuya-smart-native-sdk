@@ -25,6 +25,13 @@
 @property (nonatomic, strong, readonly) id deviceModel;
 @end
 
+@interface ThingSmartBLEManager : NSObject
++ (instancetype)sharedInstance;
+@property (nonatomic, strong, nullable) id delegate;
+- (void)startListening:(BOOL)clearCache;
+- (void)stopListening:(BOOL)clearCache;
+@end
+
 @interface ThingSmartBizCore : NSObject
 + (instancetype)sharedInstance;
 - (void)registerService:(Protocol *)service withInstance:(id)instance;
@@ -58,9 +65,165 @@
 }
 @end
 
+@interface TuyaBLESearchProxy : NSObject
+@property (nonatomic, copy) NSString *productId;
+@property (nonatomic, copy, nullable) TuyaHomeBridgeSuccess success;
+@property (nonatomic, copy, nullable) TuyaHomeBridgeFailure failure;
+@property (nonatomic, strong) NSMutableDictionary<NSString *, NSDictionary *> *foundDevices;
+@property (nonatomic, assign) NSUInteger generation;
+- (void)startWithProductId:(NSString *)productId
+                   timeout:(NSTimeInterval)timeout
+                   success:(TuyaHomeBridgeSuccess)success
+                   failure:(TuyaHomeBridgeFailure)failure;
+- (void)stopAndClear:(BOOL)clearCache;
+@end
+
+@implementation TuyaBLESearchProxy
+
+- (instancetype)init {
+  self = [super init];
+  if (self) {
+    _productId = @"";
+    _foundDevices = [NSMutableDictionary dictionary];
+  }
+  return self;
+}
+
+- (void)startWithProductId:(NSString *)productId
+                   timeout:(NSTimeInterval)timeout
+                   success:(TuyaHomeBridgeSuccess)success
+                   failure:(TuyaHomeBridgeFailure)failure {
+  Class managerClass = NSClassFromString(@"ThingSmartBLEManager");
+  if (!managerClass || ![managerClass respondsToSelector:@selector(sharedInstance)]) {
+    if (failure) {
+      failure(@(-300030), @"ThingSmartBLEManager is unavailable. Check ThingSmartHomeKit integration.");
+    }
+    return;
+  }
+  Protocol *delegateProtocol = NSProtocolFromString(@"ThingSmartBLEManagerDelegate");
+  if (delegateProtocol) {
+    class_addProtocol(self.class, delegateProtocol);
+  }
+  self.productId = productId ?: @"";
+  self.success = success;
+  self.failure = failure;
+  [self.foundDevices removeAllObjects];
+  self.generation += 1;
+  NSUInteger currentGeneration = self.generation;
+  ThingSmartBLEManager *manager = [managerClass sharedInstance];
+  manager.delegate = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [manager startListening:YES];
+    [self emitEvent:@"searchStarted" searching:YES];
+  });
+
+  NSTimeInterval safeTimeout = timeout > 0 ? timeout : 120;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(safeTimeout * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    if (self.generation != currentGeneration) {
+      return;
+    }
+    [self stopAndClear:NO];
+    [self emitEvent:@"searchTimeout" searching:NO];
+  });
+}
+
+- (void)stopAndClear:(BOOL)clearCache {
+  self.generation += 1;
+  Class managerClass = NSClassFromString(@"ThingSmartBLEManager");
+  if (managerClass && [managerClass respondsToSelector:@selector(sharedInstance)]) {
+    ThingSmartBLEManager *manager = [managerClass sharedInstance];
+    [manager stopListening:clearCache];
+    manager.delegate = nil;
+  }
+}
+
+- (void)bluetoothDidUpdateState:(BOOL)isPoweredOn {
+  if (!isPoweredOn && self.failure) {
+    self.failure(@(-300031), @"Bluetooth is powered off or permission was denied.");
+  }
+}
+
+- (void)didDiscoveryDeviceWithDeviceInfo:(id)deviceInfo {
+  NSString *uuid = [self textValue:[self safeValue:deviceInfo key:@"uuid"]];
+  NSString *pid = [self textValue:[self safeValue:deviceInfo key:@"productId"]];
+  if (pid.length == 0) {
+    pid = [self textValue:[self safeValue:deviceInfo key:@"productKey"]];
+  }
+  if (uuid.length == 0) {
+    return;
+  }
+  if (self.productId.length > 0 && ![self.productId isEqualToString:pid]) {
+    return;
+  }
+  NSString *mac = [self textValue:[self safeValue:deviceInfo key:@"mac"]];
+  NSDictionary *device = @{
+    @"uuid": uuid,
+    @"productId": pid,
+    @"pid": pid,
+    @"address": mac,
+    @"mac": mac,
+    @"name": [self textValue:[self safeValue:deviceInfo key:@"name"]],
+    @"isActive": [self numberValue:[self safeValue:deviceInfo key:@"isActive"]],
+    @"isSupport5G": [self numberValue:[self safeValue:deviceInfo key:@"isSupport5G"]],
+    @"bleType": [self numberValue:[self safeValue:deviceInfo key:@"bleType"]]
+  };
+  self.foundDevices[uuid] = device;
+  [self emitEvent:@"deviceFound" searching:YES];
+}
+
+- (void)emitEvent:(NSString *)event searching:(BOOL)searching {
+  if (!self.success) {
+    return;
+  }
+  NSArray *devices = self.foundDevices.allValues ?: @[];
+  NSDictionary *result = @{
+    @"event": event ?: @"search",
+    @"searching": @(searching),
+    @"platform": @"ios",
+    @"mode": @"BLE_WIFI",
+    @"devices": devices,
+    @"count": @(devices.count)
+  };
+  NSData *data = [NSJSONSerialization dataWithJSONObject:result options:0 error:nil];
+  NSString *json = data ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] : @"{}";
+  self.success(json ?: @"{}");
+}
+
+- (id)safeValue:(id)object key:(NSString *)key {
+  @try {
+    id value = [object valueForKey:key];
+    return value == nil || value == NSNull.null ? nil : value;
+  } @catch (__unused NSException *exception) {
+    return nil;
+  }
+}
+
+- (NSString *)textValue:(id)value {
+  if ([value isKindOfClass:NSString.class]) {
+    return value;
+  }
+  if ([value respondsToSelector:@selector(stringValue)]) {
+    return [value stringValue];
+  }
+  return @"";
+}
+
+- (NSNumber *)numberValue:(id)value {
+  if ([value isKindOfClass:NSNumber.class]) {
+    return value;
+  }
+  if ([value isKindOfClass:NSString.class]) {
+    return @([(NSString *)value doubleValue]);
+  }
+  return @0;
+}
+
+@end
+
 @implementation TuyaHomeBridge
 
 static TuyaFamilyProvider *sFamilyProvider;
+static TuyaBLESearchProxy *sBLESearchProxy;
 
 + (void)getHomeListWithSuccess:(TuyaHomeBridgeSuccess)success
                        failure:(TuyaHomeBridgeFailure)failure {
@@ -240,6 +403,28 @@ static TuyaFamilyProvider *sFamilyProvider;
     }];
   } @catch (NSException *exception) {
     [self emitException:failure fallback:@"Open Tuya device panel crashed" exception:exception];
+  }
+}
+
++ (void)startSearchToyDevicesWithProductId:(NSString *)productId
+                                    timeout:(NSNumber *)timeout
+                                    success:(TuyaHomeBridgeSuccess)success
+                                    failure:(TuyaHomeBridgeFailure)failure {
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    sBLESearchProxy = [TuyaBLESearchProxy new];
+  });
+  [sBLESearchProxy startWithProductId:productId
+                              timeout:timeout.doubleValue
+                              success:success
+                              failure:failure];
+}
+
++ (void)stopSearchToyDevicesWithSuccess:(TuyaHomeBridgeSuccess)success
+                                 failure:(__unused TuyaHomeBridgeFailure)failure {
+  [sBLESearchProxy stopAndClear:YES];
+  if (success) {
+    success(@"{\"stopped\":true,\"target\":\"search\",\"platform\":\"ios\"}");
   }
 }
 
