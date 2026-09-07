@@ -21,6 +21,16 @@ typedef void (^TuyaHomeBridgeFailure)(NSNumber *code, NSString *message);
                                failure:(TuyaHomeBridgeFailure)failure
     NS_SWIFT_NAME(getOrCreateDefaultHome(name:success:failure:));
 
++ (void)getDeviceListWithHomeId:(long long)homeId
+                         success:(TuyaHomeBridgeSuccess)success
+                         failure:(TuyaHomeBridgeFailure)failure
+    NS_SWIFT_NAME(getDeviceList(homeId:success:failure:));
+
++ (void)openDevicePanelWithDeviceId:(NSString *)deviceId
+                             success:(TuyaHomeBridgeSuccess)success
+                             failure:(TuyaHomeBridgeFailure)failure
+    NS_SWIFT_NAME(openDevicePanel(deviceId:success:failure:));
+
 @end
 
 NS_ASSUME_NONNULL_END

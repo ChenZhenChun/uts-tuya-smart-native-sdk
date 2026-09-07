@@ -1,4 +1,5 @@
 #import "TuyaHomeBridge.h"
+#import <objc/runtime.h>
 
 @interface ThingSmartHomeManager : NSObject
 - (void)getHomeListWithSuccess:(void (^)(NSArray *homes))success
@@ -12,7 +13,54 @@
                 failure:(void (^)(NSError *error))failure;
 @end
 
+@interface ThingSmartHome : NSObject
++ (instancetype)homeWithHomeId:(long long)homeId;
+- (void)getHomeDataWithSuccess:(void (^)(id homeModel))success
+                       failure:(void (^)(NSError *error))failure;
+@property (nonatomic, strong, readonly) NSArray *deviceList;
+@end
+
+@interface ThingSmartDevice : NSObject
++ (instancetype)deviceWithDeviceId:(NSString *)deviceId;
+@property (nonatomic, strong, readonly) id deviceModel;
+@end
+
+@interface ThingSmartBizCore : NSObject
++ (instancetype)sharedInstance;
+- (void)registerService:(Protocol *)service withInstance:(id)instance;
+- (id)serviceOfProtocol:(Protocol *)service;
+- (void)updateConfig;
+@end
+
+@interface NSObject (TuyaPanelRuntime)
+- (void)gotoPanelViewControllerWithDevice:(id)device
+                                    group:(nullable id)group
+                             initialProps:(nullable NSDictionary *)initialProps
+                             contextProps:(nullable NSDictionary *)contextProps
+                               completion:(nullable void (^)(NSError * _Nullable error))completion;
+- (void)updateCurrentFamilyId:(long long)homeId;
+@end
+
+@interface TuyaFamilyProvider : NSObject
+@property (nonatomic, strong, nullable) ThingSmartHome *home;
+@property (nonatomic, assign) long long homeId;
+@end
+
+@implementation TuyaFamilyProvider
+- (ThingSmartHome *)getCurrentHome {
+  return self.home;
+}
+- (long long)currentFamilyId {
+  return self.homeId;
+}
+- (void)updateCurrentFamilyId:(long long)homeId {
+  self.homeId = homeId;
+}
+@end
+
 @implementation TuyaHomeBridge
+
+static TuyaFamilyProvider *sFamilyProvider;
 
 + (void)getHomeListWithSuccess:(TuyaHomeBridgeSuccess)success
                        failure:(TuyaHomeBridgeFailure)failure {
@@ -27,6 +75,7 @@
       return;
     }
     [manager getHomeListWithSuccess:^(NSArray *homes) {
+      [self rememberFirstHome:homes];
       NSDictionary *result = [self resultWithHomes:homes source:@"query"];
       if (success) {
         success([self jsonStringWithObject:result]);
@@ -59,6 +108,7 @@
                     latitude:0
                    longitude:0
                      success:^(long long homeId) {
+      [self rememberHomeId:homeId];
       NSDictionary *home = @{
         @"homeId": @(homeId),
         @"name": cleanName,
@@ -94,6 +144,7 @@
     }
     [manager getHomeListWithSuccess:^(NSArray *homes) {
       if (homes.count > 0) {
+        [self rememberFirstHome:homes];
         NSDictionary *result = [self resultWithHomes:homes source:@"query"];
         if (success) {
           success([self jsonStringWithObject:result]);
@@ -106,6 +157,167 @@
     }];
   } @catch (NSException *exception) {
     [self emitException:failure fallback:@"Get or create home crashed" exception:exception];
+  }
+}
+
++ (void)getDeviceListWithHomeId:(long long)homeId
+                         success:(TuyaHomeBridgeSuccess)success
+                         failure:(TuyaHomeBridgeFailure)failure {
+  if (homeId <= 0) {
+    [self emitMessageFailure:failure code:-300010 message:@"homeId cannot be empty"];
+    return;
+  }
+  [self loadHomeId:homeId success:^(ThingSmartHome *home) {
+    NSArray *devices = [home.deviceList isKindOfClass:NSArray.class] ? home.deviceList : @[];
+    NSMutableArray *items = [NSMutableArray arrayWithCapacity:devices.count];
+    for (id device in devices) {
+      [items addObject:[self dictionaryFromDevice:device]];
+    }
+    if (success) {
+      success([self jsonStringWithObject:@{
+        @"devices": items,
+        @"count": @(items.count),
+        @"homeId": @(homeId)
+      }]);
+    }
+  } failure:failure];
+}
+
++ (void)openDevicePanelWithDeviceId:(NSString *)deviceId
+                             success:(TuyaHomeBridgeSuccess)success
+                             failure:(TuyaHomeBridgeFailure)failure {
+  NSString *cleanDeviceId = [deviceId stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  if (cleanDeviceId.length == 0) {
+    [self emitMessageFailure:failure code:-300020 message:@"devId cannot be empty"];
+    return;
+  }
+
+  @try {
+    Class deviceClass = NSClassFromString(@"ThingSmartDevice");
+    if (!deviceClass || ![deviceClass respondsToSelector:@selector(deviceWithDeviceId:)]) {
+      [self emitMessageFailure:failure code:-300021 message:@"ThingSmartDevice is unavailable. Check ThingSmartHomeKit integration."];
+      return;
+    }
+    ThingSmartDevice *device = [deviceClass deviceWithDeviceId:cleanDeviceId];
+    id deviceModel = device.deviceModel;
+    if (!deviceModel) {
+      [self emitMessageFailure:failure code:-300022 message:@"Device model not found. Load the home device list before opening the panel."];
+      return;
+    }
+    [self prepareBizBundleWithDeviceModel:deviceModel failure:failure completion:^{
+      Class coreClass = NSClassFromString(@"ThingSmartBizCore");
+      Protocol *panelProtocol = NSProtocolFromString(@"ThingPanelProtocol");
+      if (!coreClass || !panelProtocol) {
+        [self emitMessageFailure:failure code:-300023 message:@"Tuya Panel BizBundle is unavailable. Check ThingSmartPanelBizBundle and ThingSmartMiniAppBizBundle."];
+        return;
+      }
+      ThingSmartBizCore *core = [coreClass sharedInstance];
+      [core updateConfig];
+      id panel = [core serviceOfProtocol:panelProtocol];
+      SEL openSelector = @selector(gotoPanelViewControllerWithDevice:group:initialProps:contextProps:completion:);
+      if (!panel || ![panel respondsToSelector:openSelector]) {
+        [self emitMessageFailure:failure code:-300024 message:@"ThingPanelProtocol service is unavailable."];
+        return;
+      }
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [panel gotoPanelViewControllerWithDevice:deviceModel
+                                           group:nil
+                                    initialProps:nil
+                                    contextProps:nil
+                                      completion:^(NSError *error) {
+          if (error) {
+            [self emitFailure:failure fallback:@"Open Tuya device panel failed" error:error];
+          }
+        }];
+        if (success) {
+          success([self jsonStringWithObject:@{
+            @"opened": @YES,
+            @"devId": cleanDeviceId,
+            @"target": @"device-panel"
+          }]);
+        }
+      });
+    }];
+  } @catch (NSException *exception) {
+    [self emitException:failure fallback:@"Open Tuya device panel crashed" exception:exception];
+  }
+}
+
++ (void)prepareBizBundleWithDeviceModel:(id)deviceModel
+                                failure:(TuyaHomeBridgeFailure)failure
+                             completion:(void (^)(void))completion {
+  long long homeId = [[self numberValue:[self safeValue:deviceModel key:@"homeId"]] longLongValue];
+  if (homeId <= 0 && sFamilyProvider.homeId > 0) {
+    homeId = sFamilyProvider.homeId;
+  }
+  if (homeId <= 0) {
+    [self emitMessageFailure:failure code:-300025 message:@"Device homeId is unavailable. Get the device list before opening the panel."];
+    return;
+  }
+  if (sFamilyProvider.home && sFamilyProvider.homeId == homeId) {
+    [self registerFamilyService];
+    completion();
+    return;
+  }
+  [self loadHomeId:homeId success:^(__unused ThingSmartHome *home) {
+    completion();
+  } failure:failure];
+}
+
++ (void)loadHomeId:(long long)homeId
+            success:(void (^)(ThingSmartHome *home))success
+            failure:(TuyaHomeBridgeFailure)failure {
+  Class homeClass = NSClassFromString(@"ThingSmartHome");
+  if (!homeClass || ![homeClass respondsToSelector:@selector(homeWithHomeId:)]) {
+    [self emitMessageFailure:failure code:-300011 message:@"ThingSmartHome is unavailable. Check ThingSmartHomeKit integration."];
+    return;
+  }
+  ThingSmartHome *home = [homeClass homeWithHomeId:homeId];
+  [home getHomeDataWithSuccess:^(__unused id homeModel) {
+    [self familyProvider].home = home;
+    [self familyProvider].homeId = homeId;
+    [self registerFamilyService];
+    success(home);
+  } failure:^(NSError *error) {
+    [self emitFailure:failure fallback:@"Get home detail failed" error:error];
+  }];
+}
+
++ (TuyaFamilyProvider *)familyProvider {
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    sFamilyProvider = [TuyaFamilyProvider new];
+  });
+  return sFamilyProvider;
+}
+
++ (void)registerFamilyService {
+  Class coreClass = NSClassFromString(@"ThingSmartBizCore");
+  Protocol *familyProtocol = NSProtocolFromString(@"ThingFamilyProtocol");
+  if (!coreClass || !familyProtocol) {
+    return;
+  }
+  class_addProtocol(TuyaFamilyProvider.class, familyProtocol);
+  ThingSmartBizCore *core = [coreClass sharedInstance];
+  [core registerService:familyProtocol withInstance:[self familyProvider]];
+  [core updateConfig];
+  id familyService = [core serviceOfProtocol:familyProtocol];
+  if ([familyService respondsToSelector:@selector(updateCurrentFamilyId:)]) {
+    [familyService updateCurrentFamilyId:sFamilyProvider.homeId];
+  }
+}
+
++ (void)rememberFirstHome:(NSArray *)homes {
+  if (homes.count == 0) {
+    return;
+  }
+  long long homeId = [[self numberValue:[self safeValue:homes.firstObject key:@"homeId"]] longLongValue];
+  [self rememberHomeId:homeId];
+}
+
++ (void)rememberHomeId:(long long)homeId {
+  if (homeId > 0) {
+    [self familyProvider].homeId = homeId;
   }
 }
 
@@ -160,6 +372,21 @@
   };
 }
 
++ (NSDictionary *)dictionaryFromDevice:(id)device {
+  id dps = [self safeValue:device key:@"dps"];
+  id schema = [self safeValue:device key:@"schema"];
+  return @{
+    @"devId": [self stringValue:[self safeValue:device key:@"devId"]],
+    @"name": [self stringValue:[self safeValue:device key:@"name"]],
+    @"productId": [self stringValue:[self safeValue:device key:@"productId"]],
+    @"uuid": [self stringValue:[self safeValue:device key:@"uuid"]],
+    @"category": [self stringValue:[self safeValue:device key:@"category"]],
+    @"online": @([[self numberValue:[self safeValue:device key:@"isOnline"]] boolValue]),
+    @"dpsText": [self jsonOrStringValue:dps],
+    @"schemaText": [self jsonOrStringValue:schema]
+  };
+}
+
 + (id)safeValue:(id)object key:(NSString *)key {
   @try {
     id value = [object valueForKey:key];
@@ -187,6 +414,19 @@
     return [value stringValue];
   }
   return @"";
+}
+
++ (NSString *)jsonOrStringValue:(id)value {
+  if (!value || value == NSNull.null) {
+    return @"";
+  }
+  if ([value isKindOfClass:NSString.class]) {
+    return value;
+  }
+  if ([NSJSONSerialization isValidJSONObject:value]) {
+    return [self jsonStringWithObject:value];
+  }
+  return [value description] ?: @"";
 }
 
 + (NSString *)jsonStringWithObject:(id)object {
