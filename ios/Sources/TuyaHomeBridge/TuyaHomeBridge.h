@@ -32,7 +32,7 @@ typedef void (^TuyaHomeBridgeFailure)(NSNumber *code, NSString *message);
     NS_SWIFT_NAME(openDevicePanel(deviceId:success:failure:));
 
 + (void)startSearchToyDevicesWithProductId:(NSString *)productId
-                                    timeout:(NSTimeInterval)timeout
+                                    timeout:(NSNumber *)timeout
                                     success:(TuyaHomeBridgeSuccess)success
                                     failure:(TuyaHomeBridgeFailure)failure
     NS_SWIFT_NAME(startSearchToyDevices(productId:timeout:success:failure:));
@@ -46,7 +46,7 @@ typedef void (^TuyaHomeBridgeFailure)(NSNumber *code, NSString *message);
                              productId:(NSString *)productId
                                   ssid:(NSString *)ssid
                               password:(NSString *)password
-                               timeout:(NSTimeInterval)timeout
+                               timeout:(NSNumber *)timeout
                                success:(TuyaHomeBridgeSuccess)success
                                failure:(TuyaHomeBridgeFailure)failure
     NS_SWIFT_NAME(startBleWifiPairing(homeId:uuid:productId:ssid:password:timeout:success:failure:));

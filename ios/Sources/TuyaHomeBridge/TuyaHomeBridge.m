@@ -629,7 +629,7 @@ static TuyaBLEWifiPairingProxy *sBLEWifiPairingProxy;
 }
 
 + (void)startSearchToyDevicesWithProductId:(NSString *)productId
-                                    timeout:(NSTimeInterval)timeout
+                                    timeout:(NSNumber *)timeout
                                     success:(TuyaHomeBridgeSuccess)success
                                     failure:(TuyaHomeBridgeFailure)failure {
   static dispatch_once_t onceToken;
@@ -637,7 +637,7 @@ static TuyaBLEWifiPairingProxy *sBLEWifiPairingProxy;
     sBLESearchProxy = [TuyaBLESearchProxy new];
   });
   [sBLESearchProxy startWithProductId:productId
-                              timeout:timeout
+                              timeout:timeout.doubleValue
                               success:success
                               failure:failure];
 }
@@ -647,7 +647,7 @@ static TuyaBLEWifiPairingProxy *sBLEWifiPairingProxy;
                              productId:(NSString *)productId
                                   ssid:(NSString *)ssid
                               password:(NSString *)password
-                               timeout:(NSTimeInterval)timeout
+                               timeout:(NSNumber *)timeout
                                success:(TuyaHomeBridgeSuccess)success
                                failure:(TuyaHomeBridgeFailure)failure {
   NSString *cleanUUID = [uuid stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -667,7 +667,7 @@ static TuyaBLEWifiPairingProxy *sBLEWifiPairingProxy;
                              productId:cleanProductId
                                   ssid:cleanSSID
                               password:password ?: @""
-                               timeout:timeout
+                               timeout:timeout.doubleValue
                                success:success
                                failure:failure];
 }
