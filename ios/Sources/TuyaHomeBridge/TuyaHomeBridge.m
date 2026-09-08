@@ -44,7 +44,7 @@
                                 password:(NSString *)password
                                  timeout:(NSTimeInterval)timeout
                                  success:(void (^)(void))success
-                                 failure:(void (^)(NSError *error))failure;
+                                 failure:(void (^)(void))failure;
 - (void)stopDiscover;
 @end
 
@@ -349,10 +349,10 @@
           }];
         }
       });
-    } failure:^(NSError *error) {
+    } failure:^{
       dispatch_async(dispatch_get_main_queue(), ^{
         if (self.generation == currentGeneration) {
-          [self finishWithError:error fallback:@"Tuya iOS BLE/Wi-Fi pairing failed"];
+          [self finishWithCode:-300045 message:@"Tuya iOS BLE/Wi-Fi pairing request failed before activation."];
         }
       });
     }];

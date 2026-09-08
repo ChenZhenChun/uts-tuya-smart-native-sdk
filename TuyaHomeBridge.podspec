@@ -1,6 +1,6 @@
 Pod::Spec.new do |s|
   s.name             = 'TuyaHomeBridge'
-  s.version          = '5.0.16'
+  s.version          = '5.0.17'
   s.summary          = 'Objective-C bridge for Tuya home APIs used by uts-tuya-smart-sdk.'
   s.description      = 'Wraps ThingSmartHomeKit home, device, BLE discovery, BLE-WiFi pairing, and device panel APIs behind JSON callbacks for UTS.'
   s.homepage         = 'https://github.com/ChenZhenChun/uts-tuya-smart-native-sdk'
