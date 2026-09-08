@@ -297,7 +297,13 @@
     return;
   }
 
-  [self stopAndClear:YES];
+  // Do not call stopDiscover before the first activation request. In the Tuya
+  // SDK this cancels the activator state that is about to consume the scanned
+  // BLE device, causing the request to enter its failure callback before a BLE
+  // connection is attempted. Only stop an older, still-active request.
+  if (self.uuid.length > 0 || self.success || self.failure) {
+    [self stopAndClear:YES];
+  }
   self.uuid = uuid ?: @"";
   self.ssid = ssid ?: @"";
   self.homeId = homeId;
@@ -661,7 +667,10 @@ static TuyaBLEWifiPairingProxy *sBLEWifiPairingProxy;
   dispatch_once(&onceToken, ^{
     sBLEWifiPairingProxy = [TuyaBLEWifiPairingProxy new];
   });
-  [sBLESearchProxy stopAndClear:YES];
+  // Keep Tuya's discovered-device cache alive while handing the UUID to the
+  // BLE/Wi-Fi activator. The search is stopped by its timeout or explicitly by
+  // stopSearchToyDevices; clearing it here can make activation fail before BLE
+  // connection starts.
   [sBLEWifiPairingProxy startWithHomeId:homeId
                                   uuid:cleanUUID
                              productId:cleanProductId
