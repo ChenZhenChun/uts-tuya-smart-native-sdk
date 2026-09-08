@@ -32,6 +32,22 @@
 - (void)stopListening:(BOOL)clearCache;
 @end
 
+@class ThingSmartBLEWifiActivator;
+
+@interface ThingSmartBLEWifiActivator : NSObject
++ (instancetype)sharedInstance;
+@property (nonatomic, weak, nullable) id bleWifiDelegate;
+- (void)startConfigBLEWifiDeviceWithUUID:(NSString *)UUID
+                                  homeId:(long long)homeId
+                               productId:(NSString *)productId
+                                    ssid:(NSString *)ssid
+                                password:(NSString *)password
+                                 timeout:(NSTimeInterval)timeout
+                                 success:(void (^)(void))success
+                                 failure:(void (^)(NSError *error))failure;
+- (void)stopDiscover;
+@end
+
 @interface ThingSmartBizCore : NSObject
 + (instancetype)sharedInstance;
 - (void)registerService:(Protocol *)service withInstance:(id)instance;
@@ -76,6 +92,32 @@
                    success:(TuyaHomeBridgeSuccess)success
                    failure:(TuyaHomeBridgeFailure)failure;
 - (void)stopAndClear:(BOOL)clearCache;
+@end
+
+@interface TuyaHomeBridge (Internal)
++ (NSDictionary *)dictionaryFromDevice:(id)device;
++ (NSString *)jsonStringWithObject:(id)object;
+@end
+
+@interface TuyaBLEWifiPairingProxy : NSObject
+@property (nonatomic, copy) NSString *uuid;
+@property (nonatomic, copy) NSString *ssid;
+@property (nonatomic, assign) long long homeId;
+@property (nonatomic, copy, nullable) TuyaHomeBridgeSuccess success;
+@property (nonatomic, copy, nullable) TuyaHomeBridgeFailure failure;
+@property (nonatomic, assign) NSUInteger generation;
+- (void)startWithHomeId:(long long)homeId
+                   uuid:(NSString *)uuid
+              productId:(NSString *)productId
+                   ssid:(NSString *)ssid
+               password:(NSString *)password
+                timeout:(NSTimeInterval)timeout
+                success:(TuyaHomeBridgeSuccess)success
+                failure:(TuyaHomeBridgeFailure)failure;
+- (void)stopAndClear:(BOOL)clearCallbacks;
+- (void)emitPayload:(NSDictionary *)payload;
+- (void)finishWithError:(nullable NSError *)error fallback:(NSString *)fallback;
+- (void)finishWithCode:(NSInteger)code message:(NSString *)message;
 @end
 
 @implementation TuyaBLESearchProxy
@@ -220,10 +262,189 @@
 
 @end
 
+@implementation TuyaBLEWifiPairingProxy
+
+- (instancetype)init {
+  self = [super init];
+  if (self) {
+    _uuid = @"";
+    _ssid = @"";
+  }
+  return self;
+}
+
+- (void)startWithHomeId:(long long)homeId
+                   uuid:(NSString *)uuid
+              productId:(NSString *)productId
+                   ssid:(NSString *)ssid
+               password:(NSString *)password
+                timeout:(NSTimeInterval)timeout
+                success:(TuyaHomeBridgeSuccess)success
+                failure:(TuyaHomeBridgeFailure)failure {
+  Class activatorClass = NSClassFromString(@"ThingSmartBLEWifiActivator");
+  SEL startSelector = @selector(startConfigBLEWifiDeviceWithUUID:homeId:productId:ssid:password:timeout:success:failure:);
+  if (!activatorClass || ![activatorClass respondsToSelector:@selector(sharedInstance)]) {
+    if (failure) {
+      failure(@(-300040), @"ThingSmartBLEWifiActivator is unavailable. Check ThingSmartHomeKit/ThingSmartBLEKit integration.");
+    }
+    return;
+  }
+  ThingSmartBLEWifiActivator *activator = [activatorClass sharedInstance];
+  if (![activator respondsToSelector:startSelector]) {
+    if (failure) {
+      failure(@(-300041), @"The installed Tuya iOS SDK does not expose BLE/Wi-Fi pairing.");
+    }
+    return;
+  }
+
+  [self stopAndClear:YES];
+  self.uuid = uuid ?: @"";
+  self.ssid = ssid ?: @"";
+  self.homeId = homeId;
+  self.success = success;
+  self.failure = failure;
+  self.generation += 1;
+  NSUInteger currentGeneration = self.generation;
+  Protocol *delegateProtocol = NSProtocolFromString(@"ThingSmartBLEWifiActivatorDelegate");
+  if (delegateProtocol) {
+    class_addProtocol(self.class, delegateProtocol);
+  }
+  activator.bleWifiDelegate = self;
+  NSTimeInterval safeTimeout = timeout > 0 ? timeout : 120;
+
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (self.generation != currentGeneration) {
+      return;
+    }
+    [self emitPayload:@{
+      @"pairing": @YES,
+      @"success": @NO,
+      @"event": @"start",
+      @"homeId": @(homeId),
+      @"ssid": ssid ?: @"",
+      @"uuid": uuid ?: @"",
+      @"productId": productId ?: @"",
+      @"mode": @"BLE_WIFI",
+      @"timeout": @(safeTimeout),
+      @"message": @"Tuya iOS BLE/Wi-Fi activator started."
+    }];
+    [activator startConfigBLEWifiDeviceWithUUID:uuid
+                                         homeId:homeId
+                                      productId:productId
+                                           ssid:ssid
+                                       password:password
+                                        timeout:safeTimeout
+                                        success:^{
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.generation == currentGeneration) {
+          [self emitPayload:@{
+            @"pairing": @YES,
+            @"success": @NO,
+            @"event": @"step",
+            @"step": @"credentialsSent",
+            @"homeId": @(homeId),
+            @"ssid": ssid ?: @"",
+            @"mode": @"BLE_WIFI",
+            @"message": @"Wi-Fi credentials were sent to the Tuya device. Waiting for cloud activation."
+          }];
+        }
+      });
+    } failure:^(NSError *error) {
+      dispatch_async(dispatch_get_main_queue(), ^{
+        if (self.generation == currentGeneration) {
+          [self finishWithError:error fallback:@"Tuya iOS BLE/Wi-Fi pairing failed"];
+        }
+      });
+    }];
+  });
+}
+
+- (void)bleWifiActivator:(__unused ThingSmartBLEWifiActivator *)activator
+didReceiveBLEWifiConfigDevice:(id)deviceModel
+                    error:(NSError *)error {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    if (error) {
+      [self finishWithError:error fallback:@"Tuya iOS BLE/Wi-Fi activation failed"];
+      return;
+    }
+    if (!deviceModel) {
+      [self finishWithCode:-300042 message:@"Tuya pairing finished without a device model."];
+      return;
+    }
+    TuyaHomeBridgeSuccess callback = self.success;
+    NSDictionary *payload = @{
+      @"pairing": @NO,
+      @"success": @YES,
+      @"event": @"activeSuccess",
+      @"homeId": @(self.homeId),
+      @"ssid": self.ssid ?: @"",
+      @"mode": @"BLE_WIFI",
+      @"device": [TuyaHomeBridge dictionaryFromDevice:deviceModel],
+      @"message": @"Tuya iOS BLE/Wi-Fi combo activator succeeded."
+    };
+    [self stopAndClear:YES];
+    if (callback) {
+      callback([TuyaHomeBridge jsonStringWithObject:payload]);
+    }
+  });
+}
+
+- (void)bleWifiActivator:(__unused ThingSmartBLEWifiActivator *)activator
+notConfigStateWithError:(NSError *)error {
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [self finishWithError:error fallback:@"The AIBOX is not in pairing mode"];
+  });
+}
+
+- (void)stopAndClear:(BOOL)clearCallbacks {
+  self.generation += 1;
+  Class activatorClass = NSClassFromString(@"ThingSmartBLEWifiActivator");
+  if (activatorClass && [activatorClass respondsToSelector:@selector(sharedInstance)]) {
+    ThingSmartBLEWifiActivator *activator = [activatorClass sharedInstance];
+    if ([activator respondsToSelector:@selector(stopDiscover)]) {
+      [activator stopDiscover];
+    }
+    if (activator.bleWifiDelegate == self) {
+      activator.bleWifiDelegate = nil;
+    }
+  }
+  if (clearCallbacks) {
+    self.success = nil;
+    self.failure = nil;
+    self.uuid = @"";
+    self.ssid = @"";
+    self.homeId = 0;
+  }
+}
+
+- (void)emitPayload:(NSDictionary *)payload {
+  if (self.success) {
+    self.success([TuyaHomeBridge jsonStringWithObject:payload]);
+  }
+}
+
+- (void)finishWithError:(NSError *)error fallback:(NSString *)fallback {
+  NSString *message = error.localizedDescription.length > 0
+      ? [NSString stringWithFormat:@"%@: %@", fallback, error.localizedDescription]
+      : fallback;
+  [self finishWithCode:error ? error.code : -300043 message:message];
+}
+
+- (void)finishWithCode:(NSInteger)code message:(NSString *)message {
+  TuyaHomeBridgeFailure callback = self.failure;
+  [self stopAndClear:YES];
+  if (callback) {
+    callback(@(code), message ?: @"Tuya iOS BLE/Wi-Fi pairing failed");
+  }
+}
+
+@end
+
 @implementation TuyaHomeBridge
 
 static TuyaFamilyProvider *sFamilyProvider;
 static TuyaBLESearchProxy *sBLESearchProxy;
+static TuyaBLEWifiPairingProxy *sBLEWifiPairingProxy;
 
 + (void)getHomeListWithSuccess:(TuyaHomeBridgeSuccess)success
                        failure:(TuyaHomeBridgeFailure)failure {
@@ -408,7 +629,7 @@ static TuyaBLESearchProxy *sBLESearchProxy;
 }
 
 + (void)startSearchToyDevicesWithProductId:(NSString *)productId
-                                    timeout:(NSNumber *)timeout
+                                    timeout:(NSTimeInterval)timeout
                                     success:(TuyaHomeBridgeSuccess)success
                                     failure:(TuyaHomeBridgeFailure)failure {
   static dispatch_once_t onceToken;
@@ -416,9 +637,47 @@ static TuyaBLESearchProxy *sBLESearchProxy;
     sBLESearchProxy = [TuyaBLESearchProxy new];
   });
   [sBLESearchProxy startWithProductId:productId
-                              timeout:timeout.doubleValue
+                              timeout:timeout
                               success:success
                               failure:failure];
+}
+
++ (void)startBleWifiPairingWithHomeId:(long long)homeId
+                                  uuid:(NSString *)uuid
+                             productId:(NSString *)productId
+                                  ssid:(NSString *)ssid
+                              password:(NSString *)password
+                               timeout:(NSTimeInterval)timeout
+                               success:(TuyaHomeBridgeSuccess)success
+                               failure:(TuyaHomeBridgeFailure)failure {
+  NSString *cleanUUID = [uuid stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  NSString *cleanProductId = [productId stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  NSString *cleanSSID = [ssid stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+  if (homeId <= 0 || cleanUUID.length == 0 || cleanProductId.length == 0 || cleanSSID.length == 0) {
+    [self emitMessageFailure:failure code:-300044 message:@"homeId, uuid, productId and ssid are required for iOS BLE/Wi-Fi pairing."];
+    return;
+  }
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    sBLEWifiPairingProxy = [TuyaBLEWifiPairingProxy new];
+  });
+  [sBLESearchProxy stopAndClear:YES];
+  [sBLEWifiPairingProxy startWithHomeId:homeId
+                                  uuid:cleanUUID
+                             productId:cleanProductId
+                                  ssid:cleanSSID
+                              password:password ?: @""
+                               timeout:timeout
+                               success:success
+                               failure:failure];
+}
+
++ (void)stopBleWifiPairingWithSuccess:(TuyaHomeBridgeSuccess)success
+                               failure:(__unused TuyaHomeBridgeFailure)failure {
+  [sBLEWifiPairingProxy stopAndClear:YES];
+  if (success) {
+    success(@"{\"stopped\":true,\"target\":\"pairing\",\"platform\":\"ios\"}");
+  }
 }
 
 + (void)stopSearchToyDevicesWithSuccess:(TuyaHomeBridgeSuccess)success
